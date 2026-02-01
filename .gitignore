@@ -1,0 +1,16 @@
+# 1. Security (NEVER upload this)
+.env
+
+# 2. Virtual Environment (Too big, OS-specific)
+venv/
+.venv/
+
+# 3. Python Junk (Compiled files)
+__pycache__/
+*.pyc
+
+# 4. Mac Junk
+.DS_Store
+
+# 5. Local Downloads (We don't need to upload the PDFs)
+downloads/
