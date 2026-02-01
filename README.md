@@ -2,6 +2,8 @@
 
 A **full-stack AI application** that turns the ArXiv research database into a conversational assistant. It doesn't just find papers; it reads them and uses **Google Gemini** to answer questions with citations.
 
+![App Demo](/images/demo.png)
+
 ### Features
 * **Automated Data Pipeline:** A self-healing ETL pipeline runs weekly via **GitHub Actions** to fetch, chunk, and embed new AI research papers.
 * **Semantic Search:** Uses **Vector Embeddings** (Supabase + pgvector) to understand the *meaning* of a query, not just keywords.
