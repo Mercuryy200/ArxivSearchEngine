@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import xml.etree.ElementTree as ET
 from pypdf import PdfReader
@@ -16,12 +17,19 @@ supabase = create_client(url, key)
 print("Loading AI Model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def extract_papers(search_query="cat:cs.AI", max_results=5):
+def extract_papers(search_query="cat:cs.*", max_results=5):
     """
     EXTRACT: Downloads PDFs from ArXiv API
     """
     print(f"Fetching {max_results} papers for query: {search_query}...")
-    api_url = f'http://export.arxiv.org/api/query?search_query={search_query}&start=0&max_results={max_results}'
+    api_url = (
+        f'http://export.arxiv.org/api/query'
+        f'?search_query={search_query}'
+        f'&start=0'
+        f'&max_results={max_results}'
+        f'&sortBy=submittedDate'
+        f'&sortOrder=descending'
+    )
     data = requests.get(api_url).content
     
     # Parse XML response
@@ -63,8 +71,23 @@ def extract_papers(search_query="cat:cs.AI", max_results=5):
 def process_and_load(papers):
     """
     TRANSFORM & LOAD: Reads text -> Chunks -> Embeds -> Saves to DB
+    Skips papers whose URL is already present in the documents table so that
+    re-running the pipeline never creates duplicate chunks.
     """
     for paper in papers:
+        # Check whether this paper's chunks already exist in the database.
+        # We filter on metadata->>'url' (PostgREST JSONB path syntax).
+        existing = (
+            supabase.table('documents')
+            .select('id')
+            .filter('metadata->>url', 'eq', paper['url'])
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            print(f"Skipping (already indexed): {paper['title']}")
+            continue
+
         print(f"Processing: {paper['title']}...")
         
         # A. Read PDF Text
@@ -77,15 +100,35 @@ def process_and_load(papers):
             print(f"Error reading PDF: {e}")
             continue
 
+        # Sanitise extracted text before chunking.
+        #
+        # 1. Remove ASCII control characters (PostgreSQL text type rejects them
+        #    and they add no semantic value).  Keep tab \x09, newline \x0a,
+        #    carriage-return \x0d which are normal whitespace in PDFs.
+        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        #
+        # 2. Drop lone Unicode surrogates (\ud800–\udfff).  pypdf occasionally
+        #    produces these from broken PDF font tables.  They are legal Python
+        #    str values but invalid UTF-8, so the Rust tokenizer crashes on
+        #    them.  Round-tripping through UTF-8 with errors='ignore' removes
+        #    them silently.
+        text = text.encode('utf-8', errors='ignore').decode('utf-8')
+
         # B. Chunking (Split text into 500-char pieces with overlap)
         chunk_size = 500
         overlap = 50
         chunks = []
         for i in range(0, len(text), chunk_size - overlap):
-            chunk = text[i:i + chunk_size]
-            if len(chunk) > 100: # Ignore tiny chunks
+            chunk = text[i:i + chunk_size].strip()
+            if len(chunk) > 100:  # ignore tiny / whitespace-only chunks
                 chunks.append(chunk)
-                
+
+        if not chunks:
+            continue
+
+        # Guard: drop any chunk that is not a plain non-empty string so the
+        # tokenizer never receives an unexpected type or empty input.
+        chunks = [c for c in chunks if isinstance(c, str) and c.strip()]
         if not chunks:
             continue
 
@@ -116,7 +159,7 @@ def process_and_load(papers):
 
 if __name__ == "__main__":
     # 1. Get the raw files
-    downloaded_papers = extract_papers(max_results=50) # Start small with 3 papers
+    downloaded_papers = extract_papers(max_results=400)
     
     # 2. Process and Upload
     process_and_load(downloaded_papers)
