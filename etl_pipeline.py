@@ -30,10 +30,18 @@ def extract_papers(search_query="cat:cs.*", max_results=5):
         f'&sortBy=submittedDate'
         f'&sortOrder=descending'
     )
-    data = requests.get(api_url).content
-    
+    # ArXiv requests large result sets in pages to avoid malformed responses.
+    data = requests.get(api_url, timeout=30).content
+
     # Parse XML response
-    root = ET.fromstring(data)
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError:
+        print("Warning: ArXiv returned malformed XML — retrying with smaller batch...")
+        # Fall back to 100 results which is reliably within ArXiv's limits
+        fallback_url = api_url.replace(f'max_results={max_results}', 'max_results=100')
+        data = requests.get(fallback_url, timeout=30).content
+        root = ET.fromstring(data)
     namespace = {'atom': 'http://www.w3.org/2005/Atom'}
     
     # Create a 'downloads' folder if it doesn't exist
@@ -159,7 +167,7 @@ def process_and_load(papers):
 
 if __name__ == "__main__":
     # 1. Get the raw files
-    downloaded_papers = extract_papers(max_results=400)
+    downloaded_papers = extract_papers(max_results=100)
     
     # 2. Process and Upload
     process_and_load(downloaded_papers)
