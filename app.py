@@ -1,8 +1,11 @@
 import streamlit as st
 from sentence_transformers import SentenceTransformer
 from supabase import create_client
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 import os
+import json
+import re
 from dotenv import load_dotenv
 
 # ── 1. SETUP ──────────────────────────────────────────────────────────────────
@@ -12,133 +15,177 @@ supabase_key  = os.environ.get("SUPABASE_KEY")
 google_key    = os.environ.get("GOOGLE_API_KEY")
 
 supabase = create_client(supabase_url, supabase_key)
-genai.configure(api_key=google_key)
+gemini   = genai.Client(api_key=google_key)
+
+# Candidates tried newest-first.  The first one that accepts a live
+# generation call (not just appears in models.list) is used.
+_MODEL_CANDIDATES = [
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-2.0-flash-lite",
+    "gemini-2.0-flash-exp",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash-latest",
+]
 
 # ── 2. CACHED RESOURCES ───────────────────────────────────────────────────────
 @st.cache_resource
 def load_embedding_model():
     return SentenceTransformer('all-MiniLM-L6-v2')
 
+
+@st.cache_resource
+def discover_gemini_model() -> str:
+    """
+    Return the first model in _MODEL_CANDIDATES that actually accepts a
+    generation call for this API key.
+
+    models.list() is intentionally skipped: deprecated models still appear
+    in the list but return 404 on generate_content.  A cheap 1-token probe
+    is the only reliable test.  Result is cached for the app's lifetime.
+    """
+    for name in _MODEL_CANDIDATES:
+        try:
+            gemini.models.generate_content(
+                model=name,
+                contents="hi",
+                config=types.GenerateContentConfig(max_output_tokens=1),
+            )
+            return name
+        except Exception:
+            continue
+    return _MODEL_CANDIDATES[-1]
+
+
 embedding_model = load_embedding_model()
+GEMINI_MODEL    = discover_gemini_model()
 
-# ── 3. AGENT TOOL DEFINITIONS (Gemini function-calling schemas) ────────────────
-# These Python functions are passed to Gemini as tools.  The LLM chooses which
-# one to call based on the user query.  The actual logic lives in the app loop.
-
-def search_papers(refined_query: str) -> str:
-    """Search the ArXiv AI/ML paper database and generate a grounded answer.
-
-    Use this when the query is specific and relevant to AI/ML research topics
-    such as deep learning, transformers, NLP, computer vision, reinforcement
-    learning, or generative models.
-
-    Args:
-        refined_query: The user's query, optionally rephrased for better
-                       semantic retrieval from the vector database.
-    """
-    return "search"
-
-
-def ask_clarification(question: str) -> str:
-    """Ask the user a clarifying question before searching.
-
-    Use this when the query is vague, ambiguous, or could refer to several
-    different research areas, making it hard to retrieve the right papers.
-
-    Args:
-        question: A concise, targeted question that will help narrow down
-                  what the user actually wants to find.
-    """
-    return "clarify"
-
-
-def report_no_results(explanation: str) -> str:
-    """Tell the user that no relevant papers can be found for their query.
-
-    Use this when the query is clearly outside the scope of the ArXiv AI/ML
-    database (e.g. cooking, sports, general medical advice).  Never fabricate
-    an answer — it is better to be honest about scope limitations.
-
-    Args:
-        explanation: A friendly explanation of why results cannot be found and
-                     a brief description of what topics the database does cover.
-    """
-    return "no_results"
-
-
-# ── 4. HELPER FUNCTIONS ───────────────────────────────────────────────────────
+# ── 3. HELPER FUNCTIONS ───────────────────────────────────────────────────────
 
 def retrieve_documents(query: str, threshold: float = 0.3, count: int = 5) -> list:
-    """Run a cosine-similarity search against the pgvector database."""
+    """
+    Cosine-similarity search with deduplication and paper-level diversity.
+
+    Strategy (all from a single over-fetched batch):
+      1. Remove exact-content duplicates (repeated ETL runs can insert the
+         same chunk multiple times).
+      2. Pick the best-scoring chunk from each unique paper first, then fill
+         any remaining slots with the next-best chunks regardless of paper.
+    This ensures the context window spans multiple papers when they exist,
+    rather than returning N chunks from the single closest paper.
+    """
     query_vector = embedding_model.encode(query).tolist()
     resp = supabase.rpc("match_documents", {
         "query_embedding": query_vector,
         "match_threshold": threshold,
-        "match_count": count,
+        "match_count": count * 8,
     }).execute()
-    return resp.data or []
+
+    # Step 1 — deduplicate by content fingerprint
+    seen_fp: set[str] = set()
+    deduped: list     = []
+    for doc in (resp.data or []):
+        fp = doc["content"][:150]
+        if fp not in seen_fp:
+            seen_fp.add(fp)
+            deduped.append(doc)
+
+    # Step 2 — one best chunk per paper, then overflow chunks
+    best_per_paper: dict[str, dict] = {}
+    overflow:       list            = []
+    for doc in deduped:
+        title = doc["metadata"]["title"]
+        if title not in best_per_paper:
+            best_per_paper[title] = doc
+        else:
+            overflow.append(doc)
+
+    return (list(best_per_paper.values()) + overflow)[:count]
 
 
 def build_answer(user_query: str, matches: list) -> str:
     """Ask Gemini to synthesise a grounded answer from retrieved context."""
     context_text = "\n\n".join(
-        f"Source ({doc['metadata']['title']}): {doc['content']}"
+        f"[Source: {doc['metadata']['title']}]\n{doc['content']}"
         for doc in matches
     )
-    gen_model = genai.GenerativeModel("gemini-1.5-flash")
-    prompt = f"""You are a helpful research assistant. Answer the User's Question using ONLY
-the Context provided below. If the answer is not present in the context, say
-"I couldn't find that information in the papers." — do not invent facts.
+    prompt = f"""You are a helpful AI research assistant. Answer the Question below \
+using the research paper excerpts in the Context.
+
+Rules:
+- Synthesise an answer from whatever relevant information exists in the Context.
+- If the Context only partially addresses the question, share what IS there and \
+note what is missing.
+- Only reply "I couldn't find relevant information in the retrieved papers." if \
+the Context contains absolutely nothing related to the question.
+- Never invent facts that are not supported by the Context.
 
 Context:
 {context_text}
 
-User's Question: {user_query}
+Question: {user_query}
 
 Answer:"""
-    return gen_model.generate_content(prompt).text
+    return gemini.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=prompt,
+    ).text
 
 
 def run_agent(user_query: str) -> tuple[str, dict]:
     """
-    Agentic routing loop using Gemini function calling.
+    Agentic routing via a structured JSON prompt.
 
-    Sends the user query to a Gemini model equipped with three tools and
-    returns (action_name, action_args) so the UI loop can act on the
-    decision without the LLM needing to know anything about Streamlit.
+    Asks Gemini to return exactly one of:
+      {"action":"search",    "query":"<refined query>"}
+      {"action":"clarify",   "question":"<clarifying question>"}
+      {"action":"no_results","reason":"<scope explanation>"}
 
-    Possible returns:
-      ("search_papers",     {"refined_query": str})
-      ("ask_clarification", {"question": str})
-      ("report_no_results", {"explanation": str})
+    Returns (action_name, action_args) where action_name is one of:
+      "search_papers" | "ask_clarification" | "report_no_results"
     """
-    router = genai.GenerativeModel(
-        model_name="gemini-1.5-flash",
-        tools=[search_papers, ask_clarification, report_no_results],
-    )
+    routing_prompt = f"""You are a router for an ArXiv AI/ML research assistant.
+The database covers: deep learning, neural networks, transformers, NLP,
+computer vision, reinforcement learning, generative models, LLMs, diffusion models.
 
-    routing_prompt = f"""You are a smart router for an ArXiv AI/ML research assistant.
+Respond with EXACTLY ONE JSON object — no extra text, no markdown fences:
 
-The database contains papers about: deep learning, neural networks, transformers,
-NLP, computer vision, reinforcement learning, generative models, LLMs, diffusion
-models, and related AI/ML topics.
+{{"action":"search",    "query":"<optimised search query>"}}
+{{"action":"clarify",   "question":"<specific clarifying question>"}}
+{{"action":"no_results","reason":"<why out of scope + what IS covered>"}}
 
-Analyse the following user query and call the most appropriate tool:
-  • search_papers     — query is specific and relevant to AI/ML research
-  • ask_clarification — query is too vague or could mean multiple different things
-  • report_no_results — query is clearly outside AI/ML scope
+Rules:
+- "search"     → query is specific and related to AI/ML research
+- "clarify"    → query is vague or ambiguous
+- "no_results" → query is clearly outside AI/ML scope (cooking, sports, etc.)
 
 User query: "{user_query}"
-"""
-    response = router.generate_content(routing_prompt)
 
-    # Walk response parts looking for a function call
-    for part in response.parts:
-        fc = getattr(part, "function_call", None)
-        if fc and fc.name:
-            return fc.name, dict(fc.args)
+JSON:"""
 
-    # Graceful fallback: default to search so the user always gets something
+    try:
+        raw = gemini.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=routing_prompt,
+        ).text
+    except Exception:
+        return "search_papers", {"refined_query": user_query}
+
+    match = re.search(r'\{[^{}]+\}', raw, re.DOTALL)
+    if match:
+        try:
+            data   = json.loads(match.group())
+            action = data.get("action", "search")
+            if action == "search":
+                return "search_papers", {"refined_query": data.get("query", user_query)}
+            if action == "clarify":
+                return "ask_clarification", {"question": data.get("question", "")}
+            if action == "no_results":
+                return "report_no_results", {"explanation": data.get("reason", "")}
+        except (json.JSONDecodeError, KeyError):
+            pass
+
     return "search_papers", {"refined_query": user_query}
 
 
@@ -151,18 +198,14 @@ def arxiv_abstract_url(pdf_url: str) -> str:
 
 
 def confidence_badge(matches: list) -> tuple[str, float, float, str]:
-    """
-    Derive a confidence label from retrieved chunk similarities.
-
-    Returns (label, max_sim, avg_sim, description).
-    """
+    """Return (label, max_sim, avg_sim, description) from similarity scores."""
     if not matches:
         return "⚪ No Signal", 0.0, 0.0, "No documents retrieved."
 
-    sims = [m["similarity"] for m in matches]
+    sims    = [m["similarity"] for m in matches]
     max_sim = max(sims)
     avg_sim = sum(sims) / len(sims)
-    desc = f"Best match: {max_sim:.2f} · Average: {avg_sim:.2f} across {len(matches)} chunks"
+    desc    = f"Best match: {max_sim:.2f} · Average: {avg_sim:.2f} across {len(matches)} chunks"
 
     if max_sim >= 0.70:
         label = "🟢 High Confidence"
@@ -174,129 +217,221 @@ def confidence_badge(matches: list) -> tuple[str, float, float, str]:
     return label, max_sim, avg_sim, desc
 
 
-# ── 5. PAGE CONFIG ────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def fetch_all_papers() -> list[dict]:
+    """
+    Return one metadata dict per unique paper in the database.
+
+    Paginates through ALL rows in chunks of 1 000 so that the 1 000-row
+    default Supabase limit never silently drops papers whose chunks happen
+    to fall outside the first page.
+    Only the metadata column is fetched (no content, no embeddings).
+    Cached for 5 minutes so repeated tab switches are instant.
+    """
+    seen:      set[str]   = set()
+    papers:    list[dict] = []
+    page_size: int        = 1000
+    offset:    int        = 0
+
+    while True:
+        resp = (
+            supabase.table("documents")
+            .select("metadata")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        batch = resp.data or []
+        for row in batch:
+            meta  = row.get("metadata") or {}
+            title = meta.get("title", "").strip()
+            if title and title not in seen:
+                seen.add(title)
+                papers.append(meta)
+        if len(batch) < page_size:
+            break                       # last page reached
+        offset += page_size
+
+    # Sort newest-first.  ISO date strings ("2024-11-02T...") are
+    # lexicographically comparable, so reverse string sort = newest first.
+    # Papers with a missing date fall to the end.
+    return sorted(papers, key=lambda p: p.get("published", ""), reverse=True)
+
+
+# ── 4. PAGE CONFIG ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="ArXiv RAG Assistant", layout="wide")
 st.title("🤖 ArXiv Research Assistant")
-st.markdown(
-    """
+
+tab_chat, tab_papers = st.tabs(["💬 Ask a Question", "📄 Papers Database"])
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — CHAT
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_chat:
+    st.markdown(
+        """
 Ask anything about AI/ML research. The assistant will:
 1. **Decide** the best action — search, ask for clarification, or explain why it can't help
 2. **Retrieve** semantically relevant paper chunks from the vector database
 3. **Answer** based *only* on those papers — no hallucination
 """
-)
+    )
 
-# ── 6. QUERY INPUT ────────────────────────────────────────────────────────────
-query = st.text_input(
-    "Ask a question about AI/ML research:",
-    placeholder="e.g., How does multi-head attention work in Transformers?",
-)
+    query = st.text_input(
+        "Ask a question about AI/ML research:",
+        placeholder="e.g., How does multi-head attention work in Transformers?",
+    )
 
-# ── 7. AGENTIC LOOP ───────────────────────────────────────────────────────────
-if query:
+    if query:
 
-    # ── Phase 1: Agent routing decision ──────────────────────────────────────
-    with st.spinner("Analysing your query…"):
-        action, args = run_agent(query)
+        with st.spinner("Analysing your query…"):
+            action, args = run_agent(query)
 
-    # ── Action A: Clarification needed ───────────────────────────────────────
-    if action == "ask_clarification":
-        st.info(
-            f"**Before I search, could you clarify?**\n\n"
-            f"{args.get('question', 'Could you provide more detail about what you are looking for?')}"
-        )
-
-    # ── Action B: Out of scope ────────────────────────────────────────────────
-    elif action == "report_no_results":
-        st.warning(
-            f"**This topic appears to be outside my knowledge base.**\n\n"
-            f"{args.get('explanation', 'The database covers AI/ML research papers only.')}"
-        )
-
-    # ── Action C: Search and answer ───────────────────────────────────────────
-    else:
-        refined_query = args.get("refined_query", query)
-
-        with st.spinner("Searching the vector database…"):
-            matches = retrieve_documents(refined_query)
-
-        # ── No results after search ───────────────────────────────────────────
-        if not matches:
-            st.warning(
-                "No relevant papers were found for that query.  "
-                "Try rephrasing, or ask about a different AI/ML topic."
+        if action == "ask_clarification":
+            st.info(
+                f"**Before I search, could you clarify?**\n\n"
+                f"{args.get('question', 'Could you provide more detail about what you are looking for?')}"
             )
 
-        # ── Results found ─────────────────────────────────────────────────────
+        elif action == "report_no_results":
+            st.warning(
+                f"**This topic appears to be outside my knowledge base.**\n\n"
+                f"{args.get('explanation', 'The database covers AI/ML research papers only.')}"
+            )
+
         else:
-            # ── Sidebar: top-3 source papers ─────────────────────────────────
-            with st.sidebar:
-                st.header("📚 Top Sources")
-                st.caption("Papers most relevant to your query")
+            refined_query = args.get("refined_query", query)
 
-                # Deduplicate by title, keep best similarity per paper
-                seen: dict[str, dict] = {}
-                for m in matches:
-                    t = m["metadata"]["title"]
-                    if t not in seen or m["similarity"] > seen[t]["similarity"]:
-                        seen[t] = m
-                top_papers = sorted(seen.values(), key=lambda x: x["similarity"], reverse=True)[:3]
+            with st.spinner("Searching the vector database…"):
+                matches = retrieve_documents(refined_query)
 
-                for i, paper in enumerate(top_papers, 1):
-                    title    = paper["metadata"]["title"]
-                    pdf_url  = paper["metadata"].get("url", "")
-                    abs_url  = arxiv_abstract_url(pdf_url)
-                    sim      = paper["similarity"]
+            if not matches:
+                st.warning(
+                    "No relevant papers were found for that query. "
+                    "Try rephrasing, or ask about a different AI/ML topic."
+                )
 
-                    display_title = title if len(title) <= 55 else title[:52] + "…"
-                    st.markdown(f"**{i}. {display_title}**")
-                    st.progress(float(sim), text=f"Similarity: {sim:.2f}")
-                    if abs_url:
-                        st.markdown(f"[View Abstract ↗]({abs_url})")
-                    if i < len(top_papers):
+            else:
+                # ── Sidebar: top-3 source papers ─────────────────────────────
+                with st.sidebar:
+                    st.header("📚 Top Sources")
+                    st.caption("Papers most relevant to your query")
+
+                    seen: dict[str, dict] = {}
+                    for m in matches:
+                        t = m["metadata"]["title"]
+                        if t not in seen or m["similarity"] > seen[t]["similarity"]:
+                            seen[t] = m
+                    top_papers = sorted(
+                        seen.values(), key=lambda x: x["similarity"], reverse=True
+                    )[:3]
+
+                    for i, paper in enumerate(top_papers, 1):
+                        title   = paper["metadata"]["title"]
+                        pdf_url = paper["metadata"].get("url", "")
+                        abs_url = arxiv_abstract_url(pdf_url)
+                        sim     = paper["similarity"]
+
+                        display_title = title if len(title) <= 55 else title[:52] + "…"
+                        st.markdown(f"**{i}. {display_title}**")
+                        st.progress(float(sim), text=f"Similarity: {sim:.2f}")
+                        if abs_url:
+                            st.markdown(f"[View Abstract ↗]({abs_url})")
+                        if i < len(top_papers):
+                            st.divider()
+
+                # ── Confidence indicator ──────────────────────────────────────
+                label, max_sim, avg_sim, desc = confidence_badge(matches)
+                col_badge, col_desc = st.columns([1, 3])
+                with col_badge:
+                    st.metric(
+                        label="Retrieval Confidence",
+                        value=f"{max_sim:.2f}",
+                        delta=f"{avg_sim:.2f} avg",
+                        help="Cosine similarity between your query and the best-matching "
+                             "paper chunk. Higher = stronger semantic match.",
+                    )
+                with col_desc:
+                    st.markdown(f"**{label}**")
+                    st.caption(desc)
+
+                # ── Generate answer ───────────────────────────────────────────
+                with st.spinner("Reading papers and generating answer…"):
+                    try:
+                        answer = build_answer(query, matches)
+                        st.success("Answer generated from research papers:")
+                        st.markdown(f"### 💡 {answer}")
+                    except Exception as e:
+                        st.error(f"Error generating answer: {e}")
+
+                # ── Expandable full source listing ────────────────────────────
+                with st.expander("📖 View All Source Documents"):
+                    for match in matches:
+                        sim     = match["similarity"]
+                        title   = match["metadata"]["title"]
+                        pdf_url = match["metadata"].get("url", "")
+                        abs_url = arxiv_abstract_url(pdf_url)
+
+                        st.markdown(f"**{title}** — Similarity: `{sim:.2f}`")
+                        st.progress(float(sim))
+                        st.info(match["content"])
+
+                        link_col1, link_col2 = st.columns(2)
+                        with link_col1:
+                            if pdf_url:
+                                st.markdown(f"[📄 PDF]({pdf_url})")
+                        with link_col2:
+                            if abs_url:
+                                st.markdown(f"[🔗 Abstract]({abs_url})")
                         st.divider()
 
-            # ── Confidence indicator ──────────────────────────────────────────
-            label, max_sim, avg_sim, desc = confidence_badge(matches)
-            col_badge, col_desc = st.columns([1, 3])
-            with col_badge:
-                st.metric(
-                    label="Retrieval Confidence",
-                    value=f"{max_sim:.2f}",
-                    delta=f"{avg_sim:.2f} avg",
-                    help="Cosine similarity between your query and the best-matching paper chunk. "
-                         "Higher = stronger semantic match.",
-                )
-            with col_desc:
-                st.markdown(f"**{label}**")
-                st.caption(desc)
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — PAPERS DATABASE
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_papers:
+    st.subheader("All Papers in the Database")
 
-            # ── Generate answer ───────────────────────────────────────────────
-            with st.spinner("Reading papers and generating answer…"):
-                try:
-                    answer = build_answer(query, matches)
-                    st.success("Answer generated from research papers:")
-                    st.markdown(f"### 💡 {answer}")
-                except Exception as e:
-                    st.error(f"Error generating answer: {e}")
+    with st.spinner("Loading papers…"):
+        all_papers = fetch_all_papers()
 
-            # ── Expandable full source listing ────────────────────────────────
-            with st.expander("📖 View All Source Documents"):
-                for match in matches:
-                    sim      = match["similarity"]
-                    title    = match["metadata"]["title"]
-                    pdf_url  = match["metadata"].get("url", "")
-                    abs_url  = arxiv_abstract_url(pdf_url)
+    # ── Search input ──────────────────────────────────────────────────────────
+    search = st.text_input(
+        "🔍 Search by title",
+        placeholder="e.g., transformer, diffusion, reinforcement…",
+    )
 
-                    st.markdown(f"**{title}** — Similarity: `{sim:.2f}`")
-                    st.progress(float(sim))
-                    st.info(match["content"])
+    filtered = (
+        [p for p in all_papers if search.strip().lower() in p.get("title", "").lower()]
+        if search.strip()
+        else all_papers
+    )
 
-                    link_col1, link_col2 = st.columns(2)
-                    with link_col1:
-                        if pdf_url:
-                            st.markdown(f"[📄 PDF]({pdf_url})")
-                    with link_col2:
-                        if abs_url:
-                            st.markdown(f"[🔗 Abstract]({abs_url})")
-                    st.divider()
+    st.caption(f"Showing **{len(filtered)}** of **{len(all_papers)}** papers")
+    st.divider()
+
+    # ── Paper list ────────────────────────────────────────────────────────────
+    if not filtered:
+        st.info("No papers match your search. Try a different keyword.")
+    else:
+        for paper in filtered:
+            title     = paper.get("title", "Untitled")
+            pdf_url   = paper.get("url", "")
+            published = paper.get("published", "")
+            abs_url   = arxiv_abstract_url(pdf_url) if pdf_url else ""
+
+            # Published year extracted from ISO date string (e.g. "2023-11-02T00:00:00Z")
+            year = published[:4] if published else "Unknown"
+
+            col_title, col_year, col_links = st.columns([5, 1, 2])
+            with col_title:
+                st.markdown(f"**{title}**")
+            with col_year:
+                st.markdown(f"📅 {year}")
+            with col_links:
+                links = []
+                if abs_url:
+                    links.append(f"[Abstract ↗]({abs_url})")
+                if pdf_url:
+                    links.append(f"[PDF ↗]({pdf_url})")
+                st.markdown(" · ".join(links))
+
+            st.divider()
