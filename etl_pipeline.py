@@ -17,7 +17,7 @@ supabase = create_client(url, key)
 print("Loading AI Model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def extract_papers(search_query="cat:cs.*", max_results=5):
+def extract_papers(search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL", max_results=5):
     """
     EXTRACT: Downloads PDFs from ArXiv API
     """
