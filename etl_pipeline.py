@@ -7,6 +7,9 @@ from sentence_transformers import SentenceTransformer
 from supabase import create_client
 from dotenv import load_dotenv
 
+_ATOM_NS  = {'atom': 'http://www.w3.org/2005/Atom'}
+_ARXIV_NS = 'http://arxiv.org/schemas/atom'
+
 # 1. SETUP: Load keys and models
 load_dotenv()
 url = os.environ.get("SUPABASE_URL")
@@ -17,9 +20,14 @@ supabase = create_client(url, key)
 print("Loading AI Model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def extract_papers(search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL", max_results=5):
+def extract_papers(
+    search_query: str = "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV",
+    max_results: int = 5,
+) -> list:
     """
-    EXTRACT: Downloads PDFs from ArXiv API
+    EXTRACT: Downloads PDFs from ArXiv API.
+    Parses title, URL, published date, and primary category for each entry.
+    File-level deduplication: skips download if local PDF already exists.
     """
     print(f"Fetching {max_results} papers for query: {search_query}...")
     api_url = (
@@ -38,27 +46,42 @@ def extract_papers(search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL", max_resul
         root = ET.fromstring(data)
     except ET.ParseError:
         print("Warning: ArXiv returned malformed XML — retrying with smaller batch...")
-        # Fall back to 100 results which is reliably within ArXiv's limits
         fallback_url = api_url.replace(f'max_results={max_results}', 'max_results=100')
         data = requests.get(fallback_url, timeout=30).content
         root = ET.fromstring(data)
-    namespace = {'atom': 'http://www.w3.org/2005/Atom'}
-    
+
     # Create a 'downloads' folder if it doesn't exist
     if not os.path.exists('downloads'):
         os.makedirs('downloads')
-        
+
     papers = []
-    
-    for entry in root.findall('atom:entry', namespace):
-        title = entry.find('atom:title', namespace).text.replace('\n', ' ')
-        link = entry.find("atom:link[@title='pdf']", namespace).attrib['href']
-        published = entry.find('atom:published', namespace).text
-        
+
+    for entry in root.findall('atom:entry', _ATOM_NS):
+        title_el = entry.find('atom:title', _ATOM_NS)
+        if title_el is None:
+            continue
+        title = title_el.text.replace('\n', ' ').strip()
+
+        link_el = entry.find("atom:link[@title='pdf']", _ATOM_NS)
+        if link_el is None:
+            continue
+        link = link_el.attrib['href']
+
+        published_el = entry.find('atom:published', _ATOM_NS)
+        published = published_el.text if published_el is not None else ''
+
+        # Parse category — prefer arxiv:primary_category, fall back to atom:category
+        primary_cat_el = entry.find(f'{{{_ARXIV_NS}}}primary_category')
+        if primary_cat_el is not None:
+            category = primary_cat_el.attrib.get('term', '')
+        else:
+            cat_el = entry.find('atom:category', _ATOM_NS)
+            category = cat_el.attrib.get('term', '') if cat_el is not None else ''
+
         # Clean filename safely
         filename = f"downloads/{title[:20].replace(' ', '_').replace('/', '-')}.pdf"
-        
-        # Download the actual PDF
+
+        # Download the actual PDF (file-level deduplication)
         if not os.path.exists(filename):
             print(f"Downloading: {title}...")
             response = requests.get(link)
@@ -66,14 +89,15 @@ def extract_papers(search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL", max_resul
                 f.write(response.content)
         else:
             print(f"Skipping download (exists): {title}")
-            
+
         papers.append({
-            "title": title,
-            "path": filename,
-            "url": link,
-            "date": published
+            "title":    title,
+            "path":     filename,
+            "url":      link,
+            "date":     published,
+            "category": category,
         })
-        
+
     return papers
 
 def process_and_load(papers):
@@ -151,9 +175,10 @@ def process_and_load(papers):
                 "content": chunk,
                 "embedding": vectors[i].tolist(), # Convert numpy array to standard list
                 "metadata": {
-                    "title": paper['title'],
-                    "url": paper['url'],
-                    "published": paper['date']
+                    "title":     paper['title'],
+                    "url":       paper['url'],
+                    "published": paper['date'],
+                    "category":  paper['category'],
                 }
             })
             
@@ -167,7 +192,10 @@ def process_and_load(papers):
 
 if __name__ == "__main__":
     # 1. Get the raw files
-    downloaded_papers = extract_papers(max_results=100)
+    downloaded_papers = extract_papers(
+        search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV",
+        max_results=100,
+    )
     
     # 2. Process and Upload
     process_and_load(downloaded_papers)

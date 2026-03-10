@@ -1,3 +1,14 @@
+---
+title: ArXiv RAG Research Assistant
+emoji: 🔬
+colorFrom: indigo
+colorTo: gray
+sdk: streamlit
+sdk_version: 1.53.1
+app_file: app.py
+pinned: true
+---
+
 # ArXiv RAG Assistant
 
 A **full-stack AI application** that turns the ArXiv research database into a conversational assistant. Ask a question about AI/ML research and the system retrieves the most relevant paper chunks, then uses **Google Gemini** to generate a grounded answer — no hallucination.

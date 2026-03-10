@@ -1,0 +1,13 @@
+[theme]
+# Dark academic palette
+base                     = "dark"
+backgroundColor          = "#1a1a2e"
+secondaryBackgroundColor = "#16213e"
+primaryColor             = "#c9a84c"
+textColor                = "#e8e0d0"
+font                     = "serif"
+
+[server]
+headless             = true
+enableCORS           = false
+enableXsrfProtection = false
