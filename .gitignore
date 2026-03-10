@@ -13,4 +13,4 @@ __pycache__/
 .DS_Store
 
 # 5. Local Downloads (We don't need to upload the PDFs)
-downloads/
+downloads/images/
