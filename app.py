@@ -766,8 +766,93 @@ with st.sidebar:
                     st.error(f"Could not save alert: {_ae}")
 
 
-# ── 7. MAIN TITLE & TABS ──────────────────────────────────────────────────────
-st.title("ArXiv RAG Research Assistant")
+# ── 7. HERO + TABS ────────────────────────────────────────────────────────────
+_n_papers             = len(fetch_all_papers())
+_n_queries, _n_ratings = fetch_hero_stats()
+
+st.markdown(f"""
+<div style="
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+  border-radius: 16px;
+  padding: 52px 40px 40px;
+  text-align: center;
+  margin-bottom: 8px;
+  border: 1px solid rgba(99,102,241,0.20);
+  box-shadow: 0 4px 32px rgba(0,0,0,0.35);
+">
+
+  <div style="
+    display: inline-block;
+    font-size: 11px; font-weight: 700; letter-spacing: 2.5px;
+    color: #818cf8; text-transform: uppercase;
+    background: rgba(129,140,248,0.12);
+    border: 1px solid rgba(129,140,248,0.28);
+    border-radius: 20px; padding: 4px 14px; margin-bottom: 20px;
+  ">AI / ML Research Assistant</div>
+
+  <h1 style="
+    font-size: 2.8rem; font-weight: 700; color: #ffffff;
+    font-family: Inter, sans-serif; line-height: 1.2;
+    margin: 0 0 18px; letter-spacing: -0.5px;
+  ">Ask the literature.<br>Get a grounded answer.</h1>
+
+  <p style="
+    font-size: 1.1rem; color: rgba(255,255,255,0.70);
+    max-width: 620px; margin: 0 auto 36px; line-height: 1.75;
+    font-family: Inter, sans-serif;
+  ">
+    Semantic search over <strong style="color:#c7d2fe;">{_n_papers:,} ArXiv papers</strong>
+    across cs.AI · cs.LG · cs.CL · cs.CV —
+    Gemini answers from retrieved paper text, not parametric memory.
+    Multi-hop reasoning. Streaming. No hallucination.
+  </p>
+
+  <div style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap; margin-bottom:36px;">
+    <div style="
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px; padding:18px 28px; min-width:120px;
+    ">
+      <div style="font-size:2rem; font-weight:700; color:#818cf8;">{_n_papers:,}</div>
+      <div style="font-size:0.78rem; color:rgba(255,255,255,0.50); margin-top:4px; letter-spacing:0.5px;">papers indexed</div>
+    </div>
+    <div style="
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px; padding:18px 28px; min-width:120px;
+    ">
+      <div style="font-size:2rem; font-weight:700; color:#34d399;">{_n_queries:,}</div>
+      <div style="font-size:0.78rem; color:rgba(255,255,255,0.50); margin-top:4px; letter-spacing:0.5px;">queries this month</div>
+    </div>
+    <div style="
+      background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.10);
+      border-radius:12px; padding:18px 28px; min-width:120px;
+    ">
+      <div style="font-size:2rem; font-weight:700; color:#fbbf24;">{_n_ratings:,}</div>
+      <div style="font-size:0.78rem; color:rgba(255,255,255,0.50); margin-top:4px; letter-spacing:0.5px;">answers rated</div>
+    </div>
+  </div>
+
+  <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:28px;">
+    <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
+                 border-radius:20px; padding:5px 16px; font-size:0.82rem;
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🎓 PhD Researchers</span>
+    <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
+                 border-radius:20px; padding:5px 16px; font-size:0.82rem;
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🧑‍💻 ML Engineers</span>
+    <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
+                 border-radius:20px; padding:5px 16px; font-size:0.82rem;
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🎒 Students</span>
+    <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
+                 border-radius:20px; padding:5px 16px; font-size:0.82rem;
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🔍 Curious Minds</span>
+  </div>
+
+  <p style="font-size:0.82rem; color:rgba(255,255,255,0.35);
+            font-family:Inter,sans-serif; margin:0;">
+    Use the tabs below to get started ↓
+  </p>
+
+</div>
+""", unsafe_allow_html=True)
 
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "Ask a Question",

@@ -516,4 +516,26 @@ Fixed-size character chunking works well at small scale but degrades at scale be
 
 ---
 
-*Document maintained alongside `app.py` and `etl_pipeline.py`. Update this file whenever the architecture changes.*
+## 9. Design Decisions
+
+This section records the key tradeoffs made during design. The goal is not to justify choices defensively, but to explain the reasoning so future engineers — or interviewers — understand why this architecture looks the way it does.
+
+### Why `all-MiniLM-L6-v2` over a larger or hosted embedding model
+
+The model runs entirely on CPU, including on the free GitHub Actions `ubuntu-latest` runner that executes the weekly ETL pipeline. Switching to OpenAI `text-embedding-3-small` would introduce a per-token API cost at every ingest run, require an additional secret in CI, and add latency for each chunk. On MTEB's Semantic Textual Similarity benchmark, MiniLM-L6 reaches Spearman ρ = 68.1 — within four points of the best public models — while encoding at roughly 9,000 sentences per second on a single CPU core. For a corpus under 100K chunks that is more than adequate. The more important constraint is consistency: if the ingest pipeline and the live query path use different models, vectors land in shifted semantic spaces and retrieval degrades silently. Using one model for both sides — loaded once per process via `@st.cache_resource` — eliminates that class of bug entirely. `all-mpnet-base-v2` (768-dim) would improve recall by a few points and is the natural upgrade when GPU becomes available for ingest; hosted APIs are appropriate only if embedding throughput becomes the pipeline bottleneck.
+
+### Why pgvector + Supabase over Pinecone, Weaviate, or Qdrant
+
+Dedicated vector databases optimise for one operation: approximate nearest-neighbour search over dense vectors. This system needs more. The reading list is a straightforward `INSERT`/`SELECT`. Category and date filtering requires SQL `WHERE` clauses. Deduplication during ingest uses exact string matching on a `JSONB` column. Putting the vector index in a separate service while keeping everything else in Postgres creates a split-brain architecture — two sources of truth that diverge under failure conditions, with no transactional guarantee bridging them. pgvector keeps all data in one store with full ACID guarantees and the entire expressiveness of SQL. At the current corpus size (< 50K chunks) a sequential scan completes in under 5 ms; the HNSW index documented in §4 provides sub-10 ms latency when the corpus grows, with no application-layer changes. The inflection point for a dedicated vector DB is consistent sub-5 ms p99 latency at hundreds of millions of vectors — a scale this project does not approach and, if it did, would likely accompany a full architectural redesign anyway.
+
+### Why Streamlit over FastAPI + React
+
+A FastAPI backend with a React or Next.js frontend is the right architecture for a production system with multiple engineers, a separate design function, and strict latency SLAs. For a solo portfolio project, the tradeoffs invert. `@st.cache_resource` handles model loading and prevents the embedding model from being re-instantiated on every request — one decorator replaces a Redis layer. `@st.cache_data` caches Supabase responses with a TTL — one decorator replaces an application-level query cache. `st.write_stream` adds streaming token-by-token output without WebSocket plumbing or server-sent event handlers. Tabs, sidebars, metrics, progress bars, and file uploaders come without writing a line of CSS or JavaScript. The architectural cost is real: Streamlit's execution model reruns the entire script on every widget interaction, which means stateful flows must be managed explicitly via `st.session_state`. That constraint shaped several design choices in this codebase — the `just_streamed` flag, the `feedback_given` flag, and the separation of "search triggers computation" from "display reads from state". Both patterns are documented inline. The migration path to FastAPI is straightforward: the retrieval and generation functions are already pure Python with no Streamlit coupling, and can be extracted into API route handlers without modification.
+
+### Why Google Gemini over OpenAI GPT-4o or Anthropic Claude
+
+Gemini 1.5 Flash offers a one-million token context window on the free tier — the single most practically useful property for a RAG system, because it allows retrieving significantly more paper chunks before hitting context limits. The `generate_content_stream` API makes streaming a one-line change from the blocking path, which is why both are available in this codebase (`call_gemini` for synchronous action buttons, `stream_gemini` for the main answer path). The model auto-discovery mechanism (`discover_gemini_model`) probes candidates newest-first at startup: the application automatically begins using newer Gemini models as they ship without any code change. The principal tradeoff is vendor lock-in — the `google.genai` types and error surface are Google-specific. The mitigation is that `call_gemini` and `stream_gemini` are the only two call sites; wrapping them in a thin provider adapter would make swapping to OpenAI or Claude a one-afternoon task. That abstraction has not been built because the cost of the current coupling is low and premature abstraction is its own form of technical debt.
+
+---
+
+*Document maintained alongside `app.py`, `etl_pipeline.py`, and `send_alerts.py`. Update this file whenever the architecture changes.*
