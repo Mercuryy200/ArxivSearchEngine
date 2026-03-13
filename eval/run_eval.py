@@ -193,7 +193,7 @@ def main() -> None:
         print(f"  Finance ({fin_t:2d} Qs)     {fin_h}/{fin_t} = {fin_h/fin_t:.1%}")
     if fin_t and fin_h == 0:
         print()
-        print("  ⚠  0 finance hits — index q-fin papers first:")
+        print("  0 finance hits — index q-fin papers first:")
         print("     python3 etl_pipeline.py")
     print("=" * W)
     print()

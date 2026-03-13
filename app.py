@@ -844,16 +844,36 @@ st.markdown(f"""
   <div style="display:flex; justify-content:center; gap:10px; flex-wrap:wrap; margin-bottom:28px;">
     <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
                  border-radius:20px; padding:5px 16px; font-size:0.82rem;
-                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🎓 PhD Researchers</span>
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="rgba(165,180,252,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="vertical-align:-1px; margin-right:5px;">
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+      </svg>PhD Researchers</span>
     <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
                  border-radius:20px; padding:5px 16px; font-size:0.82rem;
-                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🧑‍💻 ML Engineers</span>
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="rgba(165,180,252,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="vertical-align:-1px; margin-right:5px;">
+        <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+      </svg>ML Engineers</span>
     <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
                  border-radius:20px; padding:5px 16px; font-size:0.82rem;
-                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🎒 Students</span>
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="rgba(165,180,252,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="vertical-align:-1px; margin-right:5px;">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+      </svg>Students</span>
     <span style="background:rgba(129,140,248,0.12); border:1px solid rgba(129,140,248,0.25);
                  border-radius:20px; padding:5px 16px; font-size:0.82rem;
-                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">🔍 Curious Minds</span>
+                 color:rgba(255,255,255,0.82); font-family:Inter,sans-serif;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+           stroke="rgba(165,180,252,0.8)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           style="vertical-align:-1px; margin-right:5px;">
+        <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+      </svg>Curious Minds</span>
   </div>
 
   <p style="font-size:0.82rem; color:rgba(255,255,255,0.35);
@@ -1106,7 +1126,7 @@ Ask anything about AI/ML research. The assistant will:
                     else "Answer generated from research papers:"
                 )
                 st.success(label_txt)
-                st.markdown(f"### 💡 {st.session_state.active_answer}")
+                st.markdown(f"### {st.session_state.active_answer}")
 
             # ── Multi-hop reasoning trace ─────────────────────────────────────
             if st.session_state.get("is_multihop") and st.session_state.get("hop_query"):
@@ -1186,7 +1206,7 @@ Ask anything about AI/ML research. The assistant will:
             st.caption("Was this answer helpful?")
             _fb_cols = st.columns([1, 1, 8])
             with _fb_cols[0]:
-                if st.button("👍", key="fb_up", disabled=st.session_state.feedback_given):
+                if st.button("", key="fb_up", icon=":material/thumb_up:", disabled=st.session_state.feedback_given):
                     submit_feedback(
                         st.session_state.active_query,
                         st.session_state.active_answer,
@@ -1195,7 +1215,7 @@ Ask anything about AI/ML research. The assistant will:
                     st.session_state.feedback_given = True
                     st.rerun()
             with _fb_cols[1]:
-                if st.button("👎", key="fb_down", disabled=st.session_state.feedback_given):
+                if st.button("", key="fb_down", icon=":material/thumb_down:", disabled=st.session_state.feedback_given):
                     submit_feedback(
                         st.session_state.active_query,
                         st.session_state.active_answer,
@@ -1463,7 +1483,7 @@ with tab4:
                 if _cat:
                     st.caption(_cat)
             with _col_y:
-                st.markdown(f"📅 {_year}")
+                st.markdown(f"{_year}")
             with _col_l:
                 _links = []
                 if _abs_url:
@@ -1554,7 +1574,7 @@ with tab5:
                 _fa.metric("Total Ratings",  len(_fb_data))
                 _fb_col.metric("Thumbs Up",  _up)
                 _fc.metric("Thumbs Down",    _down)
-                st.bar_chart(pd.DataFrame({"Ratings": {"👍": _up, "👎": _down}}))
+                st.bar_chart(pd.DataFrame({"Ratings": {"Up": _up, "Down": _down}}))
             else:
                 st.caption("No ratings yet.")
         except Exception:
@@ -1623,7 +1643,7 @@ with tab6:
 
         if st.session_state.pdf_answer and not st.session_state.pdf_streamed:
             st.success("Answer from your uploaded PDF:")
-            st.markdown(f"### 💡 {st.session_state.pdf_answer}")
+            st.markdown(f"### {st.session_state.pdf_answer}")
         elif st.session_state.pdf_answer:
             # Reset flag after first render to enable cached display on re-runs
             st.session_state.pdf_streamed = False

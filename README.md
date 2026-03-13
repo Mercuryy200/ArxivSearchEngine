@@ -92,12 +92,12 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for indexing strategy, scaling, FastAPI d
 
 | Tab | Description |
 |---|---|
-| 💬 **Ask a Question** | Agentic search with Deep Search (multi-hop), comparison mode, 4 action buttons, feedback, Save + BibTeX per source |
-| 📈 **Trending This Week** | Recent papers, category breakdown chart, one-click weekly digest |
-| 📚 **Reading List** | Saved papers, paper recommendations, individual Remove, Export All as BibTeX, Clear All |
-| 🗃 **Papers Database** | Full paper index with title search, year-range slider, category filter |
-| 📊 **Analytics** | Query history, confidence chart, category usage, answer quality ratings summary |
-| 📄 **Upload PDF** | Upload any PDF, ask questions, view source passages — in-session, nothing stored to the database |
+| **Ask a Question** | Agentic search with Deep Search (multi-hop), comparison mode, 4 action buttons, feedback, Save + BibTeX per source |
+| **Trending This Week** | Recent papers, category breakdown chart, one-click weekly digest |
+| **Reading List** | Saved papers, paper recommendations, individual Remove, Export All as BibTeX, Clear All |
+| **Papers Database** | Full paper index with title search, year-range slider, category filter |
+| **Analytics** | Query history, confidence chart, category usage, answer quality ratings summary |
+| **Upload PDF** | Upload any PDF, ask questions, view source passages — in-session, nothing stored to the database |
 
 ---
 
