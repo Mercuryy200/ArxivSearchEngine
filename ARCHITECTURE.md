@@ -516,7 +516,114 @@ Fixed-size character chunking works well at small scale but degrades at scale be
 
 ---
 
-## 9. Design Decisions
+## 9. Finance Domain Expansion (q-fin)
+
+The ETL pipeline and category filter now include six quantitative finance categories alongside the four computer-science ones:
+
+| ArXiv code | Subject area |
+|------------|-------------|
+| `q-fin.ST` | Statistical Finance — return modelling, volatility, risk factors |
+| `q-fin.CP` | Computational Finance — numerical methods, ML applied to pricing |
+| `q-fin.PM` | Portfolio Management — allocation, factor models, optimisation |
+| `q-fin.TR` | Trading and Market Microstructure — execution, order-book dynamics |
+| `q-fin.RM` | Risk Management — VaR, CVaR, stress testing |
+| `q-fin.MF` | Mathematical Finance — derivatives, stochastic calculus |
+
+Adding these categories required no changes to the vector schema, chunking pipeline, or retrieval functions — the same 384-dimensional MiniLM embedding space covers financial language adequately because the model was trained on diverse web text including financial corpora.  The agentic router prompt was updated to list quantitative finance as an in-scope domain so finance questions are not incorrectly routed to `report_no_results`.
+
+---
+
+## 10. REST API (FastAPI)
+
+`api.py` wraps the retrieval and generation logic in a standard HTTP API, making the system consumable from any client without the Streamlit runtime.
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET`  | `/api/health` | Liveness probe; returns active Gemini model name |
+| `POST` | `/api/search` | Retrieve top-K chunks + blocking Gemini answer |
+| `POST` | `/api/search/stream` | Same retrieval + streaming `text/plain` answer |
+| `POST` | `/api/summarize` | Summarise supplied context (bullets / open_problems / digest) |
+| `GET`  | `/api/papers` | Paginated paper list with optional category filter |
+
+Auto-generated interactive docs are available at `/docs` (Swagger UI) and `/redoc`.
+
+### Running locally
+
+```bash
+uvicorn api:app --reload --port 8000
+```
+
+### Example: search with curl
+
+```bash
+curl -s -X POST http://localhost:8000/api/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "How does LoRA reduce fine-tuning cost?", "count": 5}' \
+  | python3 -m json.tool
+```
+
+### Example: streaming answer
+
+```bash
+curl -s -X POST http://localhost:8000/api/search/stream \
+  -H "Content-Type: application/json" \
+  -d '{"query": "What are diffusion models?"}' \
+  --no-buffer
+```
+
+### Design notes
+
+The FastAPI layer intentionally **does not import from `app.py`**.  The Streamlit app depends on `st.session_state`, `st.error`, and `@st.cache_resource` — none of which exist outside a Streamlit runtime.  `api.py` reimplements the same retrieval and generation logic (~60 lines of clean Python) with proper exception raising instead of `st.error` calls.  A future refactor could extract a `core.py` module shared by both, but the duplication is small enough that co-locating the logic in each entry-point is the simpler choice for now.
+
+---
+
+## 11. Evaluation Framework
+
+### Motivation
+
+RAG systems are notoriously hard to evaluate without a labelled test set.  The standard failure mode is *vibes-based* development: the engineer asks a few questions, sees plausible answers, and declares the system "working".  A formal eval set catches regressions (e.g. a chunking change that breaks retrieval for specific question types) and provides an honest metric for the README.
+
+### Methodology
+
+**Eval set** (`eval/eval_set.json`): 20 questions, 15 covering AI/ML topics and 5 covering quantitative finance.  Each question has:
+
+- `expected_keywords` — terms that should appear in a relevant chunk
+- `min_keyword_matches` — how many must match for a chunk to be labelled relevant (2–3 depending on specificity)
+
+**Scoring** (computed by `eval/run_eval.py`):
+
+| Metric | Definition |
+|--------|-----------|
+| **Hit Rate@5** | Fraction of questions where ≥1 of the top-5 retrieved chunks is relevant |
+| **MRR** | Mean Reciprocal Rank — mean(1/rank) of the first relevant chunk; rewards higher-ranked hits |
+| **Mean top-1 sim** | Average cosine similarity of the top-ranked chunk — indicates overall index health |
+
+Relevance is determined by keyword matching against `chunk.content + paper.title` (case-insensitive substring), which avoids the need for human annotation while remaining informative for retrieval debugging.
+
+### Running the eval
+
+```bash
+python3 eval/run_eval.py
+
+# Save a timestamped snapshot
+python3 eval/run_eval.py | tee eval/results/$(date +%Y-%m-%d).txt
+```
+
+The finance questions (Q16–Q20) will score 0 until q-fin papers are indexed via `etl_pipeline.py`.
+
+### Latest results
+
+| Run date | Hit Rate@5 | MRR | Mean sim@1 | AI/ML | Finance |
+|----------|-----------|-----|-----------|-------|---------|
+| *(run `python3 eval/run_eval.py` and paste here)* | — | — | — | — | — |
+
+Update this table after each significant change to the chunking strategy, embedding model, or retrieval function.
+
+---
+
+## 12. Design Decisions
 
 This section records the key tradeoffs made during design. The goal is not to justify choices defensively, but to explain the reasoning so future engineers — or interviewers — understand why this architecture looks the way it does.
 

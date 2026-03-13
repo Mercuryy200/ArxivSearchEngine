@@ -1,0 +1,170 @@
+{
+  "version": "1.0",
+  "description": "20-question evaluation set for the ArXiv RAG Research Assistant. 15 AI/ML questions and 5 quantitative finance questions. A retrieval is scored as correct (Hit@5) when at least one of the top-5 retrieved chunks contains >= min_keyword_matches of the expected_keywords (case-insensitive substring match).",
+  "scoring": {
+    "primary":   "Hit Rate@5 — fraction of questions where the top-5 contains ≥1 relevant chunk",
+    "secondary": "MRR — mean reciprocal rank of the first relevant chunk across all questions"
+  },
+  "questions": [
+    {
+      "id": 1,
+      "question": "What is the attention mechanism and how is it used in transformer models?",
+      "expected_keywords": ["attention", "query", "key", "value", "transformer"],
+      "min_keyword_matches": 3,
+      "domain": "cs.CL",
+      "topic": "Transformers"
+    },
+    {
+      "id": 2,
+      "question": "How does BERT use masked language modeling for pre-training?",
+      "expected_keywords": ["bert", "masked", "pre-training", "bidirectional", "language model"],
+      "min_keyword_matches": 2,
+      "domain": "cs.CL",
+      "topic": "Pre-training"
+    },
+    {
+      "id": 3,
+      "question": "What is LoRA and how does it reduce the cost of fine-tuning large language models?",
+      "expected_keywords": ["lora", "low-rank", "fine-tuning", "adapter", "parameters"],
+      "min_keyword_matches": 2,
+      "domain": "cs.CL",
+      "topic": "PEFT"
+    },
+    {
+      "id": 4,
+      "question": "How do diffusion models generate images through iterative denoising?",
+      "expected_keywords": ["diffusion", "denoising", "noise", "score", "reverse"],
+      "min_keyword_matches": 3,
+      "domain": "cs.CV",
+      "topic": "Generative Models"
+    },
+    {
+      "id": 5,
+      "question": "What is RLHF and how is it used to align language models with human preferences?",
+      "expected_keywords": ["rlhf", "reinforcement", "reward", "human feedback", "preference"],
+      "min_keyword_matches": 2,
+      "domain": "cs.LG",
+      "topic": "Alignment"
+    },
+    {
+      "id": 6,
+      "question": "How does the Vision Transformer (ViT) differ from convolutional neural networks for image recognition?",
+      "expected_keywords": ["vision transformer", "vit", "patch", "image", "attention"],
+      "min_keyword_matches": 2,
+      "domain": "cs.CV",
+      "topic": "Computer Vision"
+    },
+    {
+      "id": 7,
+      "question": "What is knowledge distillation and how is it used to compress large neural networks?",
+      "expected_keywords": ["distillation", "teacher", "student", "soft", "compression"],
+      "min_keyword_matches": 2,
+      "domain": "cs.LG",
+      "topic": "Model Compression"
+    },
+    {
+      "id": 8,
+      "question": "How does contrastive learning enable self-supervised representation learning?",
+      "expected_keywords": ["contrastive", "self-supervised", "representation", "positive", "negative"],
+      "min_keyword_matches": 3,
+      "domain": "cs.LG",
+      "topic": "Self-supervised Learning"
+    },
+    {
+      "id": 9,
+      "question": "What are the key differences between LSTM and transformer models for sequence modelling?",
+      "expected_keywords": ["lstm", "recurrent", "attention", "sequence", "gating"],
+      "min_keyword_matches": 3,
+      "domain": "cs.LG",
+      "topic": "Sequence Models"
+    },
+    {
+      "id": 10,
+      "question": "How does retrieval-augmented generation prevent hallucination in language model outputs?",
+      "expected_keywords": ["retrieval", "augmented", "generation", "hallucination", "grounding"],
+      "min_keyword_matches": 3,
+      "domain": "cs.CL",
+      "topic": "RAG"
+    },
+    {
+      "id": 11,
+      "question": "How does FlashAttention reduce memory requirements of the attention computation?",
+      "expected_keywords": ["flash attention", "memory", "efficient", "io", "bandwidth"],
+      "min_keyword_matches": 2,
+      "domain": "cs.LG",
+      "topic": "Efficient Attention"
+    },
+    {
+      "id": 12,
+      "question": "What are mixture-of-experts models and how do they scale neural network capacity?",
+      "expected_keywords": ["mixture", "experts", "routing", "sparse", "gating"],
+      "min_keyword_matches": 3,
+      "domain": "cs.LG",
+      "topic": "Scaling"
+    },
+    {
+      "id": 13,
+      "question": "What do neural scaling laws say about the relationship between model size, data, and performance?",
+      "expected_keywords": ["scaling", "law", "compute", "parameters", "loss"],
+      "min_keyword_matches": 3,
+      "domain": "cs.LG",
+      "topic": "Scaling Laws"
+    },
+    {
+      "id": 14,
+      "question": "How are graph neural networks applied to node classification problems?",
+      "expected_keywords": ["graph", "neural network", "node", "message passing", "aggregation"],
+      "min_keyword_matches": 3,
+      "domain": "cs.LG",
+      "topic": "Graph Learning"
+    },
+    {
+      "id": 15,
+      "question": "How does in-context learning allow large language models to perform tasks without gradient updates?",
+      "expected_keywords": ["in-context", "few-shot", "prompt", "demonstration", "inference"],
+      "min_keyword_matches": 2,
+      "domain": "cs.CL",
+      "topic": "In-context Learning"
+    },
+    {
+      "id": 16,
+      "question": "How are neural networks applied to predicting stock returns and market movements?",
+      "expected_keywords": ["stock", "neural", "prediction", "return", "market"],
+      "min_keyword_matches": 3,
+      "domain": "q-fin.ST",
+      "topic": "Stock Prediction"
+    },
+    {
+      "id": 17,
+      "question": "What reinforcement learning techniques are applied to algorithmic trading strategies?",
+      "expected_keywords": ["trading", "reinforcement learning", "algorithm", "market", "strategy"],
+      "min_keyword_matches": 2,
+      "domain": "q-fin.TR",
+      "topic": "Algorithmic Trading"
+    },
+    {
+      "id": 18,
+      "question": "How are transformer architectures adapted for forecasting financial time series?",
+      "expected_keywords": ["transformer", "time series", "financial", "forecast", "temporal"],
+      "min_keyword_matches": 3,
+      "domain": "q-fin.CP",
+      "topic": "Financial Time Series"
+    },
+    {
+      "id": 19,
+      "question": "What machine learning methods are used for portfolio construction and risk-adjusted optimisation?",
+      "expected_keywords": ["portfolio", "optimisation", "machine learning", "return", "risk"],
+      "min_keyword_matches": 3,
+      "domain": "q-fin.PM",
+      "topic": "Portfolio Management"
+    },
+    {
+      "id": 20,
+      "question": "How is NLP used to extract sentiment signals from financial news and earnings reports?",
+      "expected_keywords": ["sentiment", "financial", "nlp", "news", "text"],
+      "min_keyword_matches": 3,
+      "domain": "q-fin.ST",
+      "topic": "Financial NLP"
+    }
+  ]
+}

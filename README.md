@@ -50,6 +50,9 @@ Built to demonstrate production RAG patterns: streaming, multi-hop reasoning, ag
 | **Session Analytics** | Query history table, confidence chart, category usage, feedback summary metrics |
 | **Auto model discovery** | Probes Gemini models newest-first at startup; survives Google deprecations without code changes |
 | **Idempotent ETL** | Re-running the pipeline skips already-indexed papers; URL-level deduplication in the database |
+| **Finance domain (q-fin)** | Indexes quantitative finance papers (q-fin.ST · CP · PM · TR · RM · MF) alongside AI/ML — relevant to fintech and quant roles |
+| **REST API (FastAPI)** | `POST /api/search`, `/api/search/stream`, `POST /api/summarize`, `GET /api/papers` — same logic as the UI, consumable from any client |
+| **Evaluation framework** | 20-question eval set with Hit Rate@5 and MRR; `eval/run_eval.py` runs the full pipeline and reports per-domain results |
 | **Daily ETL automation** | GitHub Actions cron runs every day at 02:00 UTC and pushes new papers into the vector store |
 
 ---
@@ -74,14 +77,14 @@ User query ──► Gemini router  ──►  embed query  ──►  hybrid se
                           Gemini (streaming)  ──►  grounded answer + sources
 ```
 
-1. **Extract** — ArXiv REST API, sorted by submission date descending, categories `cs.AI OR cs.LG OR cs.CL OR cs.CV`
+1. **Extract** — ArXiv REST API, sorted by submission date descending, categories `cs.AI OR cs.LG OR cs.CL OR cs.CV OR q-fin.ST OR q-fin.CP OR q-fin.PM OR q-fin.TR OR q-fin.RM OR q-fin.MF`
 2. **Transform** — `pypdf` text extraction → NLTK sentence-boundary chunks (~800 chars, min 100 chars) → `all-MiniLM-L6-v2` embeddings; category stored in metadata
 3. **Load** — Supabase PostgreSQL + `pgvector`; URL-level deduplication skips already-indexed papers on re-runs
 4. **Route** — Gemini classifies each query as *search / clarify / out-of-scope* via a structured JSON prompt
 5. **Retrieve** — pgvector hybrid search (cosine + BM25 with RRF); results deduplicated and diversified across papers; optionally filtered by category
 6. **Generate** — Retrieved chunks + question → streaming Gemini prompt → answer grounded in paper text
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for a deep-dive into indexing strategy, scaling to 1M+ documents, and design decision rationale.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for indexing strategy, scaling, FastAPI design, eval methodology, and design decision rationale.
 
 ---
 
@@ -187,7 +190,22 @@ python3 etl_pipeline.py
 streamlit run app.py
 ```
 
-### 6. (Optional) Set up email alerts
+### 6. (Optional) Run the REST API
+
+```bash
+uvicorn api:app --reload --port 8000
+# Swagger UI: http://localhost:8000/docs
+```
+
+### 7. (Optional) Run the evaluation
+
+```bash
+python3 eval/run_eval.py
+```
+
+Requires the database to be populated. Finance questions (Q16–Q20) need q-fin papers indexed first.
+
+### 8. (Optional) Set up email alerts
 
 Add `SENDGRID_API_KEY` and `ALERT_FROM_EMAIL` to your GitHub repository secrets. The workflow in `.github/workflows/paper_alerts.yml` triggers every Monday at 08:00 UTC. Run manually at any time from the Actions tab.
 
@@ -197,13 +215,17 @@ Add `SENDGRID_API_KEY` and `ALERT_FROM_EMAIL` to your GitHub repository secrets.
 
 ```
 ├── app.py                         # Streamlit UI — 6 tabs, hero, sidebar, full RAG pipeline
-├── etl_pipeline.py                # Extract → Transform → Load (ArXiv → pgvector, weekly)
+├── api.py                         # FastAPI REST layer — /api/search, /api/summarize, /api/papers
+├── etl_pipeline.py                # Extract → Transform → Load (ArXiv + q-fin → pgvector, daily)
 ├── send_alerts.py                 # Weekly email digest sender (SendGrid)
 ├── supabase_migrations.sql        # DDL for feedback, query_log, paper_alerts tables
 ├── check_models.py                # Lists available Gemini models for debugging
 ├── requirements.txt               # Pinned dependencies
-├── ARCHITECTURE.md                # Deep-dive: indexing, scaling, design decisions
+├── ARCHITECTURE.md                # Deep-dive: indexing, scaling, eval, design decisions
 ├── CONTRIBUTING.md                # Contribution guidelines
+├── eval/
+│   ├── eval_set.json              # 20 questions with expected keywords (15 AI/ML + 5 finance)
+│   └── run_eval.py                # Evaluation runner — Hit Rate@5, MRR, per-domain breakdown
 ├── .github/
 │   └── workflows/
 │       ├── weekly_update.yml      # ETL cron — every day 02:00 UTC
@@ -215,7 +237,7 @@ Add `SENDGRID_API_KEY` and `ALERT_FROM_EMAIL` to your GitHub repository secrets.
 
 ## Design Decisions
 
-See [ARCHITECTURE.md §9](ARCHITECTURE.md#9-design-decisions) for detailed rationale on:
+See [ARCHITECTURE.md §12](ARCHITECTURE.md#12-design-decisions) for detailed rationale on:
 
 - Why `all-MiniLM-L6-v2` over OpenAI `text-embedding-3-small` or `all-mpnet-base-v2`
 - Why pgvector + Supabase over Pinecone, Weaviate, or Qdrant

@@ -272,9 +272,13 @@ def run_agent(user_query: str) -> tuple[str, dict]:
     Returns (action_name, action_args) where action_name is one of:
       "search_papers" | "ask_clarification" | "report_no_results"
     """
-    routing_prompt = f"""You are a router for an ArXiv AI/ML research assistant.
-The database covers: deep learning, neural networks, transformers, NLP,
-computer vision, reinforcement learning, generative models, LLMs, diffusion models.
+    routing_prompt = f"""You are a router for an ArXiv research assistant.
+The database covers:
+- AI / ML: deep learning, neural networks, transformers, NLP, computer vision,
+  reinforcement learning, generative models, LLMs, diffusion models, RLHF, RAG
+- Quantitative Finance: algorithmic trading, portfolio optimization, financial
+  risk modelling, market microstructure, financial time series, financial NLP,
+  asset pricing, quantitative strategies
 
 Respond with EXACTLY ONE JSON object — no extra text, no markdown fences:
 
@@ -283,9 +287,9 @@ Respond with EXACTLY ONE JSON object — no extra text, no markdown fences:
 {{"action":"no_results","reason":"<why out of scope + what IS covered>"}}
 
 Rules:
-- "search"     → query is specific and related to AI/ML research
+- "search"     → query is related to AI/ML or quantitative finance research
 - "clarify"    → query is vague or ambiguous
-- "no_results" → query is clearly outside AI/ML scope (cooking, sports, etc.)
+- "no_results" → query is clearly outside scope (cooking, sports, general news, etc.)
 
 User query: "{user_query}"
 
@@ -705,7 +709,13 @@ with st.sidebar:
 
     # Category filter
     st.subheader("Category Filter")
-    CATEGORIES = ["All", "cs.AI", "cs.LG", "cs.CL", "cs.CV"]
+    CATEGORIES = [
+        "All",
+        # Computer Science
+        "cs.AI", "cs.LG", "cs.CL", "cs.CV",
+        # Quantitative Finance
+        "q-fin.ST", "q-fin.CP", "q-fin.PM", "q-fin.TR", "q-fin.RM", "q-fin.MF",
+    ]
     selected_categories: list = st.multiselect(
         "Show categories", CATEGORIES, default=["All"]
     ) or ["All"]
@@ -973,7 +983,7 @@ Ask anything about AI/ML research. The assistant will:
             elif action == "report_no_results":
                 st.warning(
                     f"**This topic appears to be outside my knowledge base.**\n\n"
-                    f"{args.get('explanation', 'The database covers AI/ML research papers only.')}"
+                    f"{args.get('explanation', 'The database covers AI/ML and quantitative finance research papers.')}"
                 )
                 st.session_state.active_answer = ""
 

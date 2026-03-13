@@ -25,7 +25,11 @@ print("Loading AI Model...")
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def extract_papers(
-    search_query: str = "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV",
+    search_query: str = (
+        "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+        " OR cat:q-fin.ST OR cat:q-fin.CP OR cat:q-fin.PM"
+        " OR cat:q-fin.TR OR cat:q-fin.RM OR cat:q-fin.MF"
+    ),
     max_results: int = 5,
 ) -> list:
     """
@@ -210,7 +214,11 @@ def process_and_load(papers):
 if __name__ == "__main__":
     # 1. Get the raw files
     downloaded_papers = extract_papers(
-        search_query="cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV",
+        search_query=(
+            "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+            " OR cat:q-fin.ST OR cat:q-fin.CP OR cat:q-fin.PM"
+            " OR cat:q-fin.TR OR cat:q-fin.RM OR cat:q-fin.MF"
+        ),
         max_results=100,
     )
     
