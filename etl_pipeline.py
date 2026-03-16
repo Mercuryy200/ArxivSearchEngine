@@ -229,7 +229,16 @@ def process_and_load(papers):
         batch_size = 100
         for i in range(0, len(data_payload), batch_size):
             batch = data_payload[i:i+batch_size]
-            response = supabase.table('documents').insert(batch).execute()
+            # Serialize embedding as a plain list so jsonb cast works
+            rpc_batch = [
+                {
+                    "content":   row["content"],
+                    "embedding": row["embedding"],
+                    "metadata":  row["metadata"],
+                }
+                for row in batch
+            ]
+            supabase.rpc("insert_documents", {"rows": rpc_batch}).execute()
             
         print(f" - Uploaded {len(chunks)} chunks to Database.")
 
