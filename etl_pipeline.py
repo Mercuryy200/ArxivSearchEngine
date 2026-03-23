@@ -225,11 +225,11 @@ def process_and_load(papers):
                 }
             })
             
-        # Upload in batches of 100 to be safe
-        batch_size = 100
+        # Upload in small batches to stay within Supabase statement timeout.
+        # Each row carries a 384-dim vector, so keep batches small (10 rows).
+        batch_size = 10
         for i in range(0, len(data_payload), batch_size):
             batch = data_payload[i:i+batch_size]
-            # Serialize embedding as a plain list so jsonb cast works
             rpc_batch = [
                 {
                     "content":   row["content"],
@@ -238,7 +238,17 @@ def process_and_load(papers):
                 }
                 for row in batch
             ]
-            supabase.rpc("insert_documents", {"rows": rpc_batch}).execute()
+            for attempt in range(3):
+                try:
+                    supabase.rpc("insert_documents", {"rows": rpc_batch}).execute()
+                    break
+                except Exception as e:
+                    if attempt < 2:
+                        wait = 2 ** attempt * 5  # 5s, 10s
+                        print(f"Insert timed out (attempt {attempt + 1}/3), retrying in {wait}s...")
+                        time.sleep(wait)
+                    else:
+                        raise
             
         print(f" - Uploaded {len(chunks)} chunks to Database.")
 
