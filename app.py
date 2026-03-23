@@ -1481,7 +1481,7 @@ with tab4:
     if not _filtered:
         st.info("No papers match your filters. Try adjusting the search or year range.")
     else:
-        for _paper in _filtered:
+        for _idx, _paper in enumerate(_filtered):
             _title   = _paper.get("title", "Untitled")
             _pdf_url = _paper.get("url", "")
             _pub     = _paper.get("published", "")
@@ -1504,7 +1504,7 @@ with tab4:
                     _links.append(f"[PDF ↗]({_pdf_url})")
                 st.markdown(" · ".join(_links))
             with _col_s:
-                if st.button("Save", key=f"db_{_title[:22]}"):
+                if st.button("Save", key=f"db_{_idx}_{_title[:22]}"):
                     save_to_reading_list({
                         "title":     _title,
                         "url":       _pdf_url,

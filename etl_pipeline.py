@@ -49,7 +49,7 @@ def _get_with_retry(url, timeout=90, max_retries=3):
 
 def extract_papers(
     search_query: str = (
-        "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+        "cat:cs"
         " OR cat:q-fin.ST OR cat:q-fin.CP OR cat:q-fin.PM"
         " OR cat:q-fin.TR OR cat:q-fin.RM OR cat:q-fin.MF"
     ),
@@ -256,7 +256,7 @@ if __name__ == "__main__":
     # 1. Get the raw files
     downloaded_papers = extract_papers(
         search_query=(
-            "cat:cs.AI OR cat:cs.LG OR cat:cs.CL OR cat:cs.CV"
+            "cat:cs"
             " OR cat:q-fin.ST OR cat:q-fin.CP OR cat:q-fin.PM"
             " OR cat:q-fin.TR OR cat:q-fin.RM OR cat:q-fin.MF"
         ),
